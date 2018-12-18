@@ -113,7 +113,7 @@ func TestRPCTranscoderReq(t *testing.T) {
 }
 
 func TestRPCSeg(t *testing.T) {
-	mid, _ := core.MakeManifestID(core.RandomVideoID())
+	mid := core.RandomManifestID()
 	b := StubBroadcaster2()
 	o := StubOrchestrator()
 	s := &BroadcastSession{
@@ -173,15 +173,11 @@ func TestRPCSeg(t *testing.T) {
 		}
 	}
 
-	// corrupt manifest id
-	corruptSegData(&net.SegData{}, core.ErrManifestID)
-	corruptSegData(&net.SegData{ManifestId: []byte("abc")}, core.ErrManifestID)
-
 	// corrupt profiles
 	corruptSegData(&net.SegData{Profiles: []byte("abc")}, common.ErrProfile)
 
 	// corrupt sig
-	sd := &net.SegData{ManifestId: s.ManifestID.GetVideoID()}
+	sd := &net.SegData{ManifestId: []byte(s.ManifestID)}
 	corruptSegData(sd, ErrSegSig) // missing sig
 	sd.Sig = []byte("abc")
 	corruptSegData(sd, ErrSegSig) // invalid sig

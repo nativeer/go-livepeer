@@ -7,6 +7,33 @@ import (
 	ethcommon "github.com/ethereum/go-ethereum/common"
 )
 
+type stubTicketStore struct {
+	tickets        map[ethcommon.Hash]*Ticket
+	sigs           map[ethcommon.Hash][]byte
+	recipientRands map[ethcommon.Hash]*big.Int
+}
+
+func newStubTicketStore() *stubTicketStore {
+	return &stubTicketStore{
+		tickets:        make(map[ethcommon.Hash]*Ticket),
+		sigs:           make(map[ethcommon.Hash][]byte),
+		recipientRands: make(map[ethcommon.Hash]*big.Int),
+	}
+}
+
+func (ts *stubTicketStore) Store(ticket *Ticket, sig []byte, recipientRand *big.Int) error {
+	ticketID := ticket.Hash()
+	ts.tickets[ticketID] = ticket
+	ts.sigs[ticketID] = sig
+	ts.recipientRands[ticketID] = recipientRand
+
+	return nil
+}
+
+func (ts *stubTicketStore) Load(ticketID ethcommon.Hash) (*Ticket, []byte, *big.Int, error) {
+	return ts.tickets[ticketID], ts.sigs[ticketID], ts.recipientRands[ticketID], nil
+}
+
 type stubSigVerifier struct {
 	verifyResult bool
 }
@@ -92,7 +119,7 @@ func (b *stubBroker) SetDeposit(addr ethcommon.Address, amount *big.Int) {
 func (b *stubBroker) GetDeposit(addr ethcommon.Address) (*big.Int, error) {
 	deposit, ok := b.deposits[addr]
 	if !ok {
-		return nil, fmt.Errorf("no deposit for %x", addr)
+		return nil, fmt.Errorf("no deposit for 0x%x", addr)
 	}
 
 	return deposit, nil
@@ -105,7 +132,7 @@ func (b *stubBroker) SetPenaltyEscrow(addr ethcommon.Address, amount *big.Int) {
 func (b *stubBroker) GetPenaltyEscrow(addr ethcommon.Address) (*big.Int, error) {
 	penaltyEscrow, ok := b.penaltyEscrows[addr]
 	if !ok {
-		return nil, fmt.Errorf("no penalty escrow for %x", addr)
+		return nil, fmt.Errorf("no penalty escrow for 0x%x", addr)
 	}
 
 	return penaltyEscrow, nil

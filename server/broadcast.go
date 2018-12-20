@@ -2,6 +2,8 @@ package server
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -115,6 +117,9 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 				glog.Warningf("Stopping current stream due to: %v", err)
 				rtmpStrm.Close()
 			}
+			if shouldStopSession(err) {
+				cxn.needOrch <- struct{}{}
+			}
 			return
 		}
 
@@ -190,4 +195,20 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 		glog.V(common.DEBUG).Info("Successfully validated segment ", seg.SeqNo)
 	}()
+}
+
+func generateSessionErrors() *regexp.Regexp {
+	// Given a list [err1, err2, err3] generates a regexp `(err1)|(err2)|(err3)`
+	errStrings := []string{"dial tcp", "unexpected EOF", "TranscoderBusy"}
+	groups := []string{}
+	for _, v := range errStrings {
+		groups = append(groups, fmt.Sprintf("(%v)", v))
+	}
+	return regexp.MustCompile(strings.Join(groups, "|"))
+}
+
+var sessionErrRegex = generateSessionErrors()
+
+func shouldStopSession(err error) bool {
+	return sessionErrRegex.MatchString(err.Error())
 }

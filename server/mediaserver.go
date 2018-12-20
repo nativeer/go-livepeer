@@ -66,6 +66,9 @@ type rtmpConnection struct {
 	pl      core.PlaylistManager
 	sess    *BroadcastSession
 	profile *ffmpeg.VideoProfile
+
+	needOrch chan struct{}
+	eof      chan struct{}
 }
 
 type LivepeerServer struct {
@@ -200,6 +203,9 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			stream:  rtmpStrm,
 			pl:      core.NewBasicPlaylistManager(mid, storage),
 			profile: &vProfile,
+
+			needOrch: make(chan struct{}),
+			eof:      make(chan struct{}),
 		}
 		s.rtmpConnections[mid] = cxn
 		s.connectionLock.Unlock()
@@ -283,7 +289,8 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		glog.V(common.SHORT).Infof("\n\nhlsStrmID: %v\n\n", hlsStrmID)
 
 		//Create Transcode Job Onchain
-		go s.startSession(cxn)
+		go s.startSessionListener(cxn)
+		cxn.needOrch <- struct{}{}
 		return nil
 	}
 }
@@ -303,32 +310,34 @@ func endRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 		if monitor.Enabled {
 			monitor.LogStreamEndedEvent(cxn.nonce)
 		}
+		cxn.eof <- struct{}{}
 		delete(s.rtmpConnections, mid)
 
 		return nil
 	}
 }
 
-func (s *LivepeerServer) startSession(cxn *rtmpConnection) {
+func (s *LivepeerServer) startSession(cxn *rtmpConnection) *BroadcastSession {
 
 	mid := rtmpManifestID(cxn.stream)
 	cpl := cxn.pl
+	var sess *BroadcastSession
 
 	// Connect to the orchestrator. If it fails, retry for as long
 	// as the RTMP stream is alive; maybe the orchestrator hasn't
 	// received the block containing the job yet
 	broadcastFunc := func() error {
-		sess, err := selectOrchestrator(s.LivepeerNode, cpl)
+		var err error
+		sess, err = selectOrchestrator(s.LivepeerNode, cpl)
 		if err == ErrDiscovery {
 			return nil // discovery disabled, don't retry
 		} else if err != nil {
 			// Should be logged upstream
 		}
-		s.connectionLock.Lock()
-		defer s.connectionLock.Unlock()
-		cxn, active := s.rtmpConnections[mid]
+		s.connectionLock.RLock()
+		defer s.connectionLock.RUnlock()
+		_, active := s.rtmpConnections[mid]
 		if active {
-			cxn.sess = sess
 			return err
 		}
 		return nil // stop if inactive
@@ -337,6 +346,46 @@ func (s *LivepeerServer) startSession(cxn *rtmpConnection) {
 	expb.MaxInterval = BroadcastRetry
 	expb.MaxElapsedTime = 0
 	backoff.Retry(broadcastFunc, expb)
+	return sess
+}
+
+func (s *LivepeerServer) startSessionListener(cxn *rtmpConnection) {
+	mut := sync.Mutex{}
+	cv := sync.NewCond(&mut)
+	pending := false
+	runStartSession := func() {
+		sess := s.startSession(cxn)
+		mut.Lock()
+		defer mut.Unlock()
+		cxn.sess = sess
+		pending = false
+		cv.Signal()
+	}
+	glog.V(common.DEBUG).Info("Starting broadcast listener for ", cxn.pl.ManifestID())
+	for {
+		select {
+
+		case <-cxn.needOrch:
+			go func() {
+				mut.Lock()
+				defer mut.Unlock()
+				if pending {
+					// Skip if we already have a request inflight
+					return
+				}
+				cxn.sess = nil
+				pending = true
+				go runStartSession()
+				for pending {
+					cv.Wait()
+				}
+			}()
+
+		case <-cxn.eof:
+			break
+		}
+	}
+	glog.V(common.DEBUG).Info("Stopping broadcast listener for ", cxn.pl.ManifestID())
 }
 
 //End RTMP Publish Handlers

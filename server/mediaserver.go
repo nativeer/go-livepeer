@@ -166,40 +166,6 @@ func createRTMPStreamIDHandler(s *LivepeerServer) func(url *url.URL) (strmID str
 
 }
 
-func (s *LivepeerServer) startBroadcast(cpl core.PlaylistManager) (*BroadcastSession, error) {
-
-	if s.LivepeerNode.OrchestratorPool == nil {
-		glog.Info("No orchestrators specified; not transcoding")
-		return nil, ErrDiscovery
-	}
-
-	rpcBcast := core.NewBroadcaster(s.LivepeerNode)
-
-	tinfos, err := s.LivepeerNode.OrchestratorPool.GetOrchestrators(1)
-	if len(tinfos) <= 0 {
-		return nil, ErrNoOrchs
-	}
-	if err != nil {
-		return nil, err
-	}
-	tinfo := tinfos[0]
-
-	// set OSes
-	var orchOS drivers.OSSession
-	if len(tinfo.Storage) > 0 {
-		orchOS = drivers.NewSession(tinfo.Storage[0])
-	}
-
-	return &BroadcastSession{
-		Broadcaster:      rpcBcast,
-		ManifestID:       cpl.ManifestID(),
-		Profiles:         BroadcastJobVideoProfiles,
-		OrchestratorInfo: tinfo,
-		OrchestratorOS:   orchOS,
-		BroadcasterOS:    cpl.GetOSSession(),
-	}, nil
-}
-
 func rtmpManifestID(rtmpStrm stream.RTMPVideoStream) core.ManifestID {
 	return parseManifestID(rtmpStrm.GetStreamID())
 }
@@ -324,7 +290,7 @@ func gotRTMPStreamHandler(s *LivepeerServer) func(url *url.URL, rtmpStrm stream.
 			// as the RTMP stream is alive; maybe the orchestrator hasn't
 			// received the block containing the job yet
 			broadcastFunc := func() error {
-				sess, err = s.startBroadcast(cpl)
+				sess, err = selectOrchestrator(s.LivepeerNode, cpl)
 				if err == ErrDiscovery {
 					return nil // discovery disabled, don't retry
 				} else if err != nil {

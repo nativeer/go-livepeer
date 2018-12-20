@@ -66,21 +66,21 @@ func (s *StubSegmenter) SegmentRTMPToHLS(ctx context.Context, rs stream.RTMPVide
 	return nil
 }
 
-func TestStartBroadcast(t *testing.T) {
+func TestSelectOrchestrator(t *testing.T) {
 	s := setupServer()
 
 	// Empty discovery
 	mid := core.RandomManifestID()
 	storage := drivers.NodeStorage.NewSession(string(mid))
 	pl := core.NewBasicPlaylistManager(mid, storage)
-	if _, err := s.startBroadcast(pl); err != ErrDiscovery {
+	if _, err := selectOrchestrator(s.LivepeerNode, pl); err != ErrDiscovery {
 		t.Error("Expected error with discovery")
 	}
 
 	sd := &stubDiscovery{}
 	// Discovery returned no orchestrators
 	s.LivepeerNode.OrchestratorPool = sd
-	if sess, err := s.startBroadacst(pl); sess != nil || err != ErrNoOrchs {
+	if sess, err := selectOrchestrator(s.LivepeerNode, pl); sess != nil || err != ErrNoOrchs {
 		t.Error("Expected nil session")
 	}
 
@@ -89,7 +89,7 @@ func TestStartBroadcast(t *testing.T) {
 		&net.OrchestratorInfo{},
 		&net.OrchestratorInfo{},
 	}
-	sess, _ := s.startBroadcast(pl)
+	sess, _ := selectOrchestrator(s.LivepeerNode, pl)
 	if sess == nil {
 		t.Error("Expected nil session")
 	}

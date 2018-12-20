@@ -199,7 +199,7 @@ func processSegment(cxn *rtmpConnection, seg *stream.HLSSegment) {
 
 func generateSessionErrors() *regexp.Regexp {
 	// Given a list [err1, err2, err3] generates a regexp `(err1)|(err2)|(err3)`
-	errStrings := []string{"dial tcp", "unexpected EOF", "TranscoderBusy"}
+	errStrings := []string{"dial tcp", "unexpected EOF", "OrchestratorBusy"}
 	groups := []string{}
 	for _, v := range errStrings {
 		groups = append(groups, fmt.Sprintf("(%v)", v))

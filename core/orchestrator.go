@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -93,6 +94,8 @@ func NewOrchestrator(n *LivepeerNode) *orchestrator {
 
 // LivepeerNode transcode methods
 
+var ErrOrchBusy = errors.New("OrchestratorBusy")
+
 type TranscodeResult struct {
 	Err  error
 	Sig  []byte
@@ -180,7 +183,7 @@ func (n *LivepeerNode) sendToTranscodeLoop(md *SegTranscodingMetadata, seg *stre
 	default:
 		// sending segChan should not block; if it does, the channel is busy
 		glog.Error("Transcoder was busy with a previous segment!")
-		return nil, fmt.Errorf("TranscoderBusy")
+		return nil, ErrOrchBusy
 	}
 	res := <-segChanData.res
 	return res, res.Err
